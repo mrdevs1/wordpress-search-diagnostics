@@ -1,28 +1,28 @@
-# WordPress Media Processing Diagnostics
+# WordPress Search Diagnostics
 
-A practical troubleshooting guide for diagnosing and resolving WordPress media upload and image processing problems.
+A practical troubleshooting guide for diagnosing and resolving WordPress search functionality problems.
 
-This repository covers media upload failures, image editor compatibility, thumbnail generation, GD, Imagick, MIME types, attachment metadata, WebP processing, and server resource limitations.
+This repository covers search query behavior, missing results, custom post types, search columns, query filters, search relevance, pagination, and common search configuration issues.
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Common Media Processing Issues](#common-media-processing-issues)
+- [Common Search Problems](#common-search-problems)
 - [Requirements](#requirements)
-- [1. Check PHP Image Extensions](#1-check-php-image-extensions)
-- [2. Check PHP Upload Configuration](#2-check-php-upload-configuration)
-- [3. Diagnose Media Upload Failures](#3-diagnose-media-upload-failures)
-- [4. Check WordPress Image Editor](#4-check-wordpress-image-editor)
-- [5. Diagnose Thumbnail Generation](#5-diagnose-thumbnail-generation)
-- [6. Inspect Registered Image Sizes](#6-inspect-registered-image-sizes)
-- [7. Inspect Attachment Metadata](#7-inspect-attachment-metadata)
-- [8. Diagnose MIME Type Issues](#8-diagnose-mime-type-issues)
-- [9. Troubleshoot WebP Processing](#9-troubleshoot-webp-processing)
-- [10. Fix Image Orientation](#10-fix-image-orientation)
-- [11. Diagnose Large Image Problems](#11-diagnose-large-image-problems)
-- [12. Regenerate Missing Thumbnails](#12-regenerate-missing-thumbnails)
-- [13. Check Upload Directory Permissions](#13-check-upload-directory-permissions)
-- [Useful WP-CLI Commands](#useful-wp-cli-commands)
+- [1. Understand WordPress Search](#1-understand-wordpress-search)
+- [2. Test a Basic Search Query](#2-test-a-basic-search-query)
+- [3. Diagnose Missing Search Results](#3-diagnose-missing-search-results)
+- [4. Check Searchable Post Types](#4-check-searchable-post-types)
+- [5. Inspect Search Columns](#5-inspect-search-columns)
+- [6. Diagnose Search Filters](#6-diagnose-search-filters)
+- [7. Check Search Exclusion Rules](#7-check-search-exclusion-rules)
+- [8. Troubleshoot Search Pagination](#8-troubleshoot-search-pagination)
+- [9. Diagnose Search Relevance](#9-diagnose-search-relevance)
+- [10. Inspect Search Query Variables](#10-inspect-search-query-variables)
+- [11. Troubleshoot Custom Field Search](#11-troubleshoot-custom-field-search)
+- [12. Check Search Template Loading](#12-check-search-template-loading)
+- [13. Debug Search SQL](#13-debug-search-sql)
+- [Useful Diagnostic Examples](#useful-diagnostic-examples)
 - [Troubleshooting Checklist](#troubleshooting-checklist)
 - [Best Practices](#best-practices)
 - [Contributing](#contributing)
@@ -30,481 +30,552 @@ This repository covers media upload failures, image editor compatibility, thumbn
 
 ## Overview
 
-WordPress includes a media handling system that manages file uploads, attachment records, image editing, metadata generation, and image resizing.
+WordPress provides a built-in search system powered by `WP_Query`.
 
-Media processing problems can affect both administrators and website visitors.
+When a visitor searches for a keyword, WordPress processes the search request, builds a database query, retrieves matching content, and displays the results through the active theme.
 
-Common causes include:
+Search problems can occur because of:
 
-- Missing PHP image processing extensions
-- Incorrect upload configuration
-- Unsupported image formats
-- Insufficient PHP memory
-- Image editor compatibility problems
-- Incorrect file permissions
-- Failed thumbnail generation
-- Missing attachment metadata
-- Server execution timeouts
-- Conflicts with image optimization plugins
+- Incorrect search query configuration
+- Unsupported or excluded post types
+- Search filters modifying query behavior
+- Missing searchable content
+- Custom field search limitations
+- Incorrect search templates
+- Pagination configuration problems
+- Plugin or theme conflicts
+- Custom SQL modifications
 
-This repository provides practical diagnostic commands and troubleshooting examples for identifying these problems.
+This repository provides practical diagnostic techniques for identifying and troubleshooting these problems.
 
-## Common Media Processing Issues
+## Common Search Problems
 
-| Issue | Possible Cause |
+| Problem | Possible Cause |
 |---|---|
-| Image upload fails | PHP upload limits or permissions |
-| HTTP error during upload | Server or image processing failure |
-| Thumbnails are missing | Image editor or memory issue |
-| Images appear rotated | EXIF orientation handling |
-| WebP upload is rejected | MIME type or format support |
-| Image editing fails | GD or Imagick configuration |
-| Media library image is broken | Missing file or attachment metadata |
-| Large images fail to process | Memory or execution limits |
+| Search returns no results | Query configuration or missing content |
+| Pages are missing | Post type restrictions |
+| Custom post types are missing | Search configuration |
+| Search ignores certain fields | Search column limitations |
+| Results are incorrect | Query filters |
+| Search pagination fails | Incorrect query settings |
+| Custom fields are not searchable | Default search limitations |
+| Search template does not load | Theme template hierarchy |
+| Results appear in unexpected order | Search ordering modifications |
 
 ## Requirements
 
-Before troubleshooting, check the environment:
-
 - WordPress installation
-- Supported PHP version
+- Basic PHP knowledge
+- Access to the active theme or custom plugin
 - WP-CLI (recommended)
-- PHP GD or Imagick extension
-- Writable WordPress uploads directory
-- Sufficient disk space
-- Access to PHP and web server error logs
+- Access to WordPress debugging logs
 
-## 1. Check PHP Image Extensions
+Always test diagnostic changes on a staging environment before applying them to a production website.
 
-WordPress uses PHP image processing libraries to handle image uploads and resizing.
+## 1. Understand WordPress Search
 
-Check installed PHP extensions:
+WordPress uses the `WP_Query` class to retrieve search results.
 
-```bash
-php -m
-```
-
-Look for:
-
-```text
-gd
-imagick
-```
-
-Check extension details:
-
-```bash
-php -i | grep -i -E "gd|imagick"
-```
-
-On Windows:
-
-```powershell
-php -m | findstr /i "gd imagick"
-```
-
-**Important:** The PHP version used by the command line may differ from the version used by Apache or PHP-FPM. Always verify the web server environment as well.
-
-## 2. Check PHP Upload Configuration
-
-The following PHP settings can affect media uploads:
-
-```ini
-file_uploads = On
-upload_max_filesize = 64M
-post_max_size = 64M
-memory_limit = 256M
-max_execution_time = 120
-max_input_time = 120
-```
-
-These are example values. Actual requirements depend on the server and website.
-
-Check the active PHP configuration:
-
-```bash
-php -i | grep -E "upload_max_filesize|post_max_size|memory_limit|max_execution_time"
-```
-
-On Windows:
-
-```powershell
-php -i | findstr /i "upload_max_filesize post_max_size memory_limit max_execution_time"
-```
-
-Things to verify:
-
-- `file_uploads` must be enabled.
-- `post_max_size` should be greater than or equal to `upload_max_filesize`.
-- PHP must have enough memory to process large images.
-- Web server and hosting-level upload limits must also be checked.
-
-## 3. Diagnose Media Upload Failures
-
-When WordPress cannot upload an image, investigate the following:
-
-1. Confirm that the file format is supported.
-2. Check the original file size.
-3. Verify PHP upload limits.
-4. Check the uploads directory permissions.
-5. Confirm sufficient disk space.
-6. Review PHP and web server error logs.
-7. Temporarily test without image optimization plugins.
-
-Find the WordPress uploads directory:
-
-```bash
-wp eval 'echo wp_upload_dir()["basedir"] . PHP_EOL;'
-```
-
-Inspect its permissions on Linux:
-
-```bash
-ls -ld wp-content/uploads
-```
-
-Avoid using unrestricted `777` permissions. Use the ownership and permissions recommended by your hosting provider.
-
-## 4. Check WordPress Image Editor
-
-WordPress supports image processing through available image editor implementations, including GD and Imagick.
-
-Use WP-CLI to check whether WordPress can initialize an image editor:
-
-```bash
-wp eval '
-$file = ABSPATH . "wp-includes/images/media/default.png";
-
-$editor = wp_get_image_editor( $file );
-
-if ( is_wp_error( $editor ) ) {
-    echo "Image editor error: ";
-    echo $editor->get_error_message() . PHP_EOL;
-} else {
-    echo "Active editor: ";
-    echo get_class( $editor ) . PHP_EOL;
-}
-'
-```
-
-Possible results:
-
-```text
-WP_Image_Editor_Imagick
-```
-
-or:
-
-```text
-WP_Image_Editor_GD
-```
-
-If the editor cannot initialize, investigate:
-
-- Missing PHP extensions
-- Unsupported image formats
-- Invalid image files
-- Image library configuration
-- Insufficient server memory
-
-## 5. Diagnose Thumbnail Generation
-
-WordPress generates additional image sizes according to the registered image size settings.
-
-When thumbnails are missing or incomplete:
-
-1. Verify that the original image exists.
-2. Confirm that WordPress can read the original image.
-3. Check the active image editor.
-4. Inspect registered image sizes.
-5. Review PHP memory and execution limits.
-6. Check server error logs.
-7. Test thumbnail generation with one attachment.
-
-Do not repeatedly regenerate the entire media library before identifying the underlying problem.
-
-## 6. Inspect Registered Image Sizes
-
-WordPress supports built-in and custom image sizes.
-
-Check registered image sizes:
-
-```bash
-wp media image-size
-```
+A search request commonly uses the `s` query variable.
 
 Example:
 
-| Image Size | Width | Height |
-|---|---:|---:|
-| thumbnail | 150 | 150 |
-| medium | 300 | 300 |
-| medium_large | 768 | 0 |
-| large | 1024 | 1024 |
-| full | Original | Original |
+```php
+$query = new WP_Query( array(
+    's' => 'wordpress',
+) );
+```
 
-Register a custom image size:
+The default search looks through these post fields:
+
+- Post title
+- Post excerpt
+- Post content
+
+The default search behavior does not automatically include arbitrary custom fields.
+
+For official query documentation:
+
+https://developer.wordpress.org/reference/classes/wp_query/
+
+## 2. Test a Basic Search Query
+
+Create a simple diagnostic query to verify that WordPress can retrieve matching content.
 
 ```php
-add_action( 'after_setup_theme', function () {
-    add_image_size( 'custom-card', 600, 400, true );
+$search_query = new WP_Query( array(
+    's'              => 'wordpress',
+    'post_type'      => 'any',
+    'post_status'    => 'publish',
+    'posts_per_page' => 10,
+) );
+
+echo 'Found results: ' . $search_query->found_posts;
+
+if ( $search_query->have_posts() ) {
+    while ( $search_query->have_posts() ) {
+        $search_query->the_post();
+
+        echo '<p>' . esc_html( get_the_title() ) . '</p>';
+    }
+}
+
+wp_reset_postdata();
+```
+
+This example checks whether published content can be retrieved for the specified keyword.
+
+Use a keyword that you know exists in your website content.
+
+## 3. Diagnose Missing Search Results
+
+If search returns no results, check the following:
+
+1. Confirm that the keyword exists in published content.
+2. Verify the post status.
+3. Check the selected post types.
+4. Review search-related filters.
+5. Check whether plugins modify the search query.
+6. Verify that the active theme displays the retrieved results.
+
+Test with a known keyword:
+
+```php
+$query = new WP_Query( array(
+    's'           => 'known-keyword',
+    'post_status' => 'publish',
+) );
+
+echo 'Matching posts: ' . $query->found_posts;
+```
+
+If the query returns results but the website displays none, investigate the theme's search template and result loop.
+
+## 4. Check Searchable Post Types
+
+WordPress search behavior can be modified to include or exclude specific post types.
+
+Inspect registered post types:
+
+```php
+$post_types = get_post_types(
+    array(),
+    'objects'
+);
+
+foreach ( $post_types as $post_type ) {
+    echo $post_type->name . ' | ';
+    echo $post_type->public ? 'Public' : 'Not Public';
+    echo PHP_EOL;
+}
+```
+
+To include selected post types in the main frontend search:
+
+```php
+add_action( 'pre_get_posts', function ( $query ) {
+
+    if (
+        ! is_admin() &&
+        $query->is_main_query() &&
+        $query->is_search()
+    ) {
+        $query->set(
+            'post_type',
+            array( 'post', 'page', 'product' )
+        );
+    }
+
 } );
 ```
 
-The custom size will be available for newly processed images. Existing attachments may require thumbnail regeneration.
+Replace `product` with an actual registered post type on your website.
 
-## 7. Inspect Attachment Metadata
+This example changes only the main frontend search query.
 
-WordPress stores attachment information, including generated image sizes and dimensions.
+Always verify that the selected post types are registered and that the desired content is publicly accessible.
 
-Inspect an attachment using its ID:
+## 5. Inspect Search Columns
 
-```bash
-wp eval '
-$id = 123;
+WordPress 6.2 and later supports the `search_columns` argument in `WP_Query`.
 
-$file = get_attached_file( $id );
-$metadata = wp_get_attachment_metadata( $id );
+Supported columns include:
 
-echo "Attachment ID: " . $id . PHP_EOL;
-echo "Original File: " . $file . PHP_EOL;
-echo "File Exists: " . ( file_exists( $file ) ? "Yes" : "No" ) . PHP_EOL;
+- `post_title`
+- `post_excerpt`
+- `post_content`
 
-echo "Metadata:" . PHP_EOL;
-print_r( $metadata );
-'
-```
-
-Replace `123` with a valid attachment ID.
-
-Check for:
-
-- Missing original files
-- Empty or incomplete metadata
-- Missing generated image sizes
-- Incorrect image dimensions
-- Invalid attachment file paths
-
-If the original image is missing, thumbnail regeneration cannot restore it.
-
-## 8. Diagnose MIME Type Issues
-
-WordPress checks file types before accepting uploads.
-
-Inspect a file's detected MIME type:
-
-```bash
-wp eval '
-$file = wp_check_filetype( "sample.webp" );
-
-print_r( $file );
-'
-```
-
-Check the allowed upload MIME types:
-
-```bash
-wp eval 'print_r( get_allowed_mime_types() );'
-```
-
-A custom MIME type can be registered with the `upload_mimes` filter:
+Example:
 
 ```php
-add_filter( 'upload_mimes', function ( $mimes ) {
-    $mimes["webp"] = "image/webp";
+$query = new WP_Query( array(
+    's' => 'wordpress',
 
-    return $mimes;
+    'search_columns' => array(
+        'post_title',
+        'post_content',
+    ),
+) );
+```
+
+This example searches post titles and content while excluding excerpts.
+
+You can also use the `post_search_columns` filter:
+
+```php
+add_filter(
+    'post_search_columns',
+    function ( $columns, $search, $query ) {
+
+        return array(
+            'post_title',
+            'post_content',
+        );
+
+    },
+    10,
+    3
+);
+```
+
+Use this filter carefully because it can affect multiple search queries.
+
+## 6. Diagnose Search Filters
+
+Plugins and themes can modify search behavior through WordPress hooks.
+
+Important search-related hooks include:
+
+| Hook | Purpose |
+|---|---|
+| `pre_get_posts` | Modify query variables |
+| `post_search_columns` | Modify searchable columns |
+| `posts_search` | Modify search SQL |
+| `posts_search_orderby` | Modify search ordering |
+| `posts_clauses` | Modify SQL query clauses |
+
+Search-related filters may unintentionally change the main query or custom queries.
+
+To identify conflicts:
+
+1. Review custom code in the active theme.
+2. Search plugin code for search-related hooks.
+3. Temporarily deactivate suspected plugins on staging.
+4. Test with a default WordPress theme.
+5. Compare search results before and after changes.
+
+Avoid removing filters from production without understanding their purpose.
+
+## 7. Check Search Exclusion Rules
+
+WordPress supports excluding search terms by prefixing them with a hyphen.
+
+Example:
+
+```text
+wordpress -plugin
+```
+
+This searches for content containing `wordpress` while excluding content matching `plugin`.
+
+The default exclusion prefix can be changed through:
+
+```php
+add_filter(
+    'wp_query_search_exclusion_prefix',
+    function ( $prefix ) {
+        return '-';
+    }
+);
+```
+
+If expected results are missing, inspect the search input and any custom exclusion logic.
+
+## 8. Troubleshoot Search Pagination
+
+Search pagination can fail when query settings are modified incorrectly.
+
+Check the main search query:
+
+```php
+add_action( 'pre_get_posts', function ( $query ) {
+
+    if (
+        ! is_admin() &&
+        $query->is_main_query() &&
+        $query->is_search()
+    ) {
+        $query->set( 'posts_per_page', 10 );
+    }
+
 } );
 ```
 
-Only allow trusted formats that are appropriate for the website.
+Important checks:
 
-Allowing a file extension does not guarantee that the server can process the file.
+- Confirm that `posts_per_page` has the expected value.
+- Verify that the theme uses the correct pagination functions.
+- Check whether custom `offset` values interfere with pagination.
+- Confirm that the search query is not replaced by another query.
+- Verify that the current page number is preserved in search URLs.
 
-## 9. Troubleshoot WebP Processing
+For custom query pagination, use the correct query object and its pagination properties.
 
-WebP support depends on WordPress, PHP, and the available image editor.
+## 9. Diagnose Search Relevance
 
-Check whether WordPress recognizes WebP:
-
-```bash
-wp eval '
-$result = wp_check_filetype( "sample.webp" );
-
-print_r( $result );
-'
-```
-
-Check installed image processing extensions:
-
-```bash
-php -m
-```
-
-If WebP processing fails, investigate:
-
-- GD or Imagick WebP support
-- PHP image library configuration
-- WordPress version compatibility
-- File integrity
-- Memory limitations
-- Image optimization plugin conflicts
-
-Remember that accepting a WebP upload and generating WebP images are separate capabilities.
-
-## 10. Fix Image Orientation
-
-Images captured by mobile devices and cameras may contain EXIF orientation metadata.
-
-Incorrect orientation handling can cause images to appear rotated.
-
-WP-CLI provides an orientation correction command:
-
-```bash
-wp media fix-orientation 123
-```
-
-Replace `123` with the attachment ID.
-
-Check command options:
-
-```bash
-wp help media fix-orientation
-```
-
-Test the command on a small number of images before running it across a large media library.
-
-## 11. Diagnose Large Image Problems
-
-Large images can consume significant memory during decoding and resizing.
-
-The memory required to process an image can be much higher than its original file size.
-
-Check PHP resource limits:
-
-```bash
-php -i | grep -E "memory_limit|max_execution_time"
-```
+WordPress search results may not match the order visitors expect.
 
 Investigate:
 
-- PHP memory limits
-- Maximum execution time
-- Image dimensions
-- Available server memory
-- Image editor compatibility
-- Hosting-level resource restrictions
+- Search keyword matching
+- Post title matching
+- Search-related ordering filters
+- Custom query modifications
+- Plugin-based relevance systems
 
-Do not increase resource limits blindly. Identify which operation is failing before changing server configuration.
+Inspect the search ordering filter:
 
-## 12. Regenerate Missing Thumbnails
+```php
+add_filter(
+    'posts_search_orderby',
+    function ( $search_orderby, $query ) {
 
-WP-CLI can regenerate image sizes for existing attachments.
+        if ( $query->is_search() ) {
+            // Inspect or customize search ordering here.
+        }
 
-Regenerate thumbnails for one attachment:
-
-```bash
-wp media regenerate 123
+        return $search_orderby;
+    },
+    10,
+    2
+);
 ```
 
-Generate only missing image sizes:
+Do not assume that the default search provides advanced relevance scoring.
 
-```bash
-wp media regenerate --only-missing
+If a website requires weighted ranking, typo tolerance, synonym support, or more advanced search behavior, consider a dedicated search solution.
+
+## 10. Inspect Search Query Variables
+
+Use `WP_Query` to inspect the variables used by a search request.
+
+Example:
+
+```php
+add_action( 'wp', function () {
+
+    if ( ! is_search() ) {
+        return;
+    }
+
+    global $wp_query;
+
+    error_log(
+        'Search Query Variables: ' .
+        print_r(
+            $wp_query->query_vars,
+            true
+        )
+    );
+
+} );
 ```
 
-Regenerate a specific image size:
+Check:
 
-```bash
-wp media regenerate --image_size=large
+- Search keyword
+- Post type
+- Post status
+- Search columns
+- Posts per page
+- Current page
+- Order and ordering rules
+
+Avoid logging sensitive user input unnecessarily.
+
+## 11. Troubleshoot Custom Field Search
+
+The default WordPress search does not automatically search arbitrary post metadata.
+
+For a specific custom field, use a dedicated query with `meta_query`.
+
+Example:
+
+```php
+$query = new WP_Query( array(
+    'post_type' => 'post',
+
+    'meta_query' => array(
+        array(
+            'key'     => 'product_code',
+            'value'   => 'ABC123',
+            'compare' => 'LIKE',
+        ),
+    ),
+) );
 ```
 
-Regenerate thumbnails for all attachments:
+This example searches a specific metadata field.
 
-```bash
-wp media regenerate --yes
+It is not a complete replacement for combining normal keyword search with custom field search.
+
+For advanced custom field search, carefully design the query and evaluate its performance on larger websites.
+
+## 12. Check Search Template Loading
+
+WordPress themes use the template hierarchy to display search results.
+
+The primary template for search results is:
+
+```text
+search.php
 ```
 
-Before bulk regeneration:
+If it does not exist, WordPress falls back to other applicable templates in the hierarchy.
 
-- Back up the uploads directory.
-- Confirm that original images are available.
-- Check available disk space.
-- Test with a few attachment IDs.
-- Run the operation during a low-traffic period.
+Check the active theme for:
 
-## 13. Check Upload Directory Permissions
+- `search.php`
+- `index.php`
+- Search result loops
+- Pagination markup
+- Search form markup
 
-WordPress needs permission to write uploaded files and generated image sizes.
+A working search query does not guarantee that the theme displays its results correctly.
 
-Find the configured uploads directory:
+If WordPress retrieves matching posts but the page appears empty, inspect the template and its loop.
 
-```bash
-wp eval 'print_r( wp_upload_dir() );'
+Official reference:
+
+https://developer.wordpress.org/themes/basics/template-hierarchy/
+
+## 13. Debug Search SQL
+
+WordPress provides query-related debugging information that can help identify unexpected search behavior.
+
+For development environments, enable debugging in `wp-config.php`:
+
+```php
+define( 'WP_DEBUG', true );
+define( 'WP_DEBUG_LOG', true );
+define( 'WP_DEBUG_DISPLAY', false );
 ```
 
-Inspect permissions:
+Inspect the last SQL query generated by a `WP_Query` instance:
 
-```bash
-ls -ld wp-content/uploads
+```php
+$query = new WP_Query( array(
+    's' => 'wordpress',
+) );
+
+error_log( $query->request );
 ```
 
-Check disk space:
+The generated SQL can help identify:
 
-```bash
-df -h
+- Unexpected WHERE conditions
+- Incorrect post type restrictions
+- Search filter modifications
+- Unexpected ordering
+- Incorrect query limits
+
+Do not display raw SQL or debugging information publicly on production websites.
+
+## Useful Diagnostic Examples
+
+### Check Whether the Current Request Is a Search
+
+```php
+if ( is_search() ) {
+    error_log( 'Search request detected.' );
+}
 ```
 
-Verify that the web server user has the required access.
+### Check the Search Keyword
 
-Do not change ownership or permissions without understanding the hosting environment.
+```php
+$keyword = get_search_query();
 
-## Useful WP-CLI Commands
+error_log(
+    'Search keyword: ' . $keyword
+);
+```
 
-| Command | Purpose |
-|---|---|
-| `wp media image-size` | List registered image sizes |
-| `wp media regenerate 123` | Regenerate sizes for one attachment |
-| `wp media regenerate --only-missing` | Generate missing image sizes |
-| `wp media regenerate --image_size=large` | Regenerate a specific size |
-| `wp media fix-orientation 123` | Correct image orientation |
-| `wp media import image.jpg` | Import an image as an attachment |
-| `wp help media` | Display media command help |
+### Check the Main Search Query
 
-Replace example attachment IDs and file paths with actual values.
+```php
+add_action( 'pre_get_posts', function ( $query ) {
+
+    if (
+        ! is_admin() &&
+        $query->is_main_query() &&
+        $query->is_search()
+    ) {
+        error_log(
+            'Main search query detected.'
+        );
+
+        error_log(
+            print_r(
+                $query->query_vars,
+                true
+            )
+        );
+    }
+
+} );
+```
+
+### Check Whether a Search Returned Results
+
+```php
+$query = new WP_Query( array(
+    's' => 'wordpress',
+) );
+
+if ( $query->have_posts() ) {
+    echo 'Search results found.';
+} else {
+    echo 'No search results found.';
+}
+
+wp_reset_postdata();
+```
 
 ## Troubleshooting Checklist
 
-Use this checklist before changing server or WordPress configuration.
+Use this checklist when diagnosing WordPress search problems.
 
-- [ ] Confirm that the original image exists.
-- [ ] Verify the image format.
-- [ ] Check PHP upload limits.
-- [ ] Check PHP memory limits.
-- [ ] Verify GD or Imagick availability.
-- [ ] Confirm the uploads directory is writable.
-- [ ] Check available disk space.
-- [ ] Review PHP and web server error logs.
-- [ ] Verify registered image sizes.
-- [ ] Inspect attachment metadata.
-- [ ] Test image editor initialization.
-- [ ] Test thumbnail generation.
-- [ ] Check WebP support when required.
-- [ ] Test without image optimization plugins.
-- [ ] Back up files before bulk regeneration.
+- [ ] Confirm that the search keyword exists.
+- [ ] Check the search query variables.
+- [ ] Verify published post status.
+- [ ] Check searchable post types.
+- [ ] Inspect search columns.
+- [ ] Review `pre_get_posts` modifications.
+- [ ] Check `post_search_columns` filters.
+- [ ] Inspect `posts_search` filters.
+- [ ] Check custom search exclusion rules.
+- [ ] Verify pagination settings.
+- [ ] Review search ordering modifications.
+- [ ] Check custom field search requirements.
+- [ ] Inspect the active search template.
+- [ ] Review plugin and theme conflicts.
+- [ ] Enable debugging on a staging environment.
+- [ ] Inspect generated SQL when necessary.
 
 ## Best Practices
 
-- Keep PHP and image processing extensions updated.
-- Use supported image formats.
-- Avoid unnecessary custom image sizes.
-- Keep original uploaded images backed up.
-- Test bulk operations before running them on large media libraries.
-- Avoid unrestricted MIME type changes.
-- Monitor server memory and disk usage.
-- Use compatible image optimization tools.
-- Review server logs when image processing fails.
-- Use WP-CLI for controlled media maintenance.
+- Use `WP_Query` for custom search queries.
+- Use `pre_get_posts` when modifying the main query.
+- Always check `is_main_query()` when targeting the main query.
+- Avoid modifying unrelated admin queries.
+- Use supported search columns.
+- Keep custom search filters narrowly scoped.
+- Test pagination after changing query variables.
+- Avoid unnecessary SQL modifications.
+- Do not use `query_posts()` to replace the main query.
+- Test search functionality after plugin or theme updates.
+- Use a dedicated search engine when advanced search capabilities are required.
 
 ## Contributing
 
@@ -512,22 +583,24 @@ Contributions are welcome.
 
 You can help improve this repository by:
 
-- Reporting media processing issues.
-- Adding troubleshooting examples.
-- Improving diagnostic commands.
-- Documenting hosting-specific problems.
-- Correcting outdated instructions.
+- Reporting search-related bugs.
+- Adding diagnostic examples.
+- Improving troubleshooting instructions.
+- Documenting compatibility issues.
+- Sharing reproducible search problems.
 
 When reporting an issue, include:
 
 - WordPress version
 - PHP version
-- GD or Imagick version
-- Hosting environment
-- Error message
-- Steps to reproduce the problem
+- Active theme
+- Relevant plugins
+- Search keyword example
+- Expected behavior
+- Actual behavior
+- Relevant error messages
 
-Do not include passwords, API keys, or other sensitive server information.
+Do not include passwords, API keys, or private user information.
 
 ## License
 
@@ -537,6 +610,6 @@ You are free to use, modify, and distribute this material with appropriate attri
 
 ---
 
-**WordPress Media Processing Diagnostics**
+**WordPress Search Diagnostics**
 
-A practical reference for diagnosing and troubleshooting WordPress media upload and image processing problems.
+A practical reference for troubleshooting WordPress search queries and search result problems.
